@@ -3,11 +3,11 @@ terraform {
     google = {
       source = "hashicorp/google"
     }
-    null = {
-      source = "hashicorp/null"
-    }
-     mysql = {
+    mysql = {
       source = "terraform-providers/mysql"
+    }
+    random = {
+      source = "hashicorp/random"
     }
   }
   required_version = ">= 0.13"

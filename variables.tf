@@ -21,53 +21,9 @@ variable "zone" {
   default     = "us-central1-a"
 }
 
-variable "machine_type" {
-  description = "The machine type to create"
-  default     = "g1-small"
-}
-
-variable "disk_image" {
-  description = "centos-7"
-  default     = "centos-7-v20190729"
-}
-
-variable "network" {
-  description = "The name or self_link of the network to attach this interface to. Either network or subnetwork must be provided."
-  default     = "moodle-vpc"
-}
-
-variable "subnetwork" {
-  description = "The name or self_link of the subnetwork to attach this interface to. The subnetwork must exist in the same region this instance will be created in. Either network or subnetwork must be provided."
-  default     = "moodle-subnet"
-}
-
-variable "subnetwork_project" {
-  description = "The project in which the subnetwork belongs. If the subnetwork is a self_link, this field is ignored in favor of the project defined in the subnetwork self_link. If the subnetwork is a name and this field is not provided, the provider project is used."
-  default     = ""
-}
-
-variable "network_ip" {
-  description = "The private IP address to assign to the instance. If empty, the address will be automatically assigned."
-  default     = ""
-}
-
-variable "nat_ip" {
-    description = "The IP address that will be 1:1 mapped to the instance's network ip. If not given, one will be generated."
-    default     = ""
-}
-variable "public_key_path" {
-  description = "public key for user Vlad"
-  default     = "/Users/vzhovnir/Diplom/Terraform/ssh.pub"
-}
-
 variable private_key_path {
   description = "Path to the private key used for ssh access"
   default     = "/Users/vzhovnir/Diplom/Terraform/ssh"
-}
-
-variable "rootdbpass" {
-  description = "Password for root db"
-  default = "securepassword"
 }
 
 variable "moodleuserdb" {
@@ -75,8 +31,25 @@ variable "moodleuserdb" {
   default = "webmoodle"
 }
 
-variable "moodlepassword_db" {
-  description = "Password for user db"
-  default = "yoursecurepasword"
+variable "mail" {
+  description = "Password for Admin moodle"
+  default = "vladikzhovnir@gmail.com"
 }
 
+variable "backup_enabled" {
+  description = "Specify whether backups should be enabled for the SQLServer instance."
+  type        = bool
+  default     = false
+}
+
+variable "binary_log_enabled" {
+  description = "Specify whether binary logs should be enabled for the SQLServer instance. Value of 'true' requires 'var.backup_enabled' to be 'true'."
+  type        = bool
+  default     = false
+}
+
+variable "pit_recovery_enabled" {
+  description = "Specify whether Point-In-Time recoevry should be enabled for the SQLServer instance. It uses the \"binary log\" feature of CloudSQL. Value of 'true' requires 'var.binary_log_enabled' to be 'true'."
+  type        = bool
+  default     = false
+}

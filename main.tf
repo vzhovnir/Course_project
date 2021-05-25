@@ -5,162 +5,65 @@ provider "google" {
   project     = var.project
   region      = var.region
 }
-
-resource "google_compute_subnetwork" "vpc_subnetwork" {
-  name          = var.subnetwork
-  ip_cidr_range = "10.15.0.0/28"
-  region        = var.region
-  network       = google_compute_network.vpc_network.id
+// Configure the Google Cloud bucket
+terraform {
+  backend "gcs" {
+    bucket      = "thesis-state"
+    prefix      = "terraform/state"
+    credentials = "/Users/vzhovnir/Diplom/Terraform/key.json"
+  }
 }
 
-resource "google_compute_network" "vpc_network" {
-    name                    = var.network
-    auto_create_subnetworks = false
+module "database" {
+  source           = "./modules/database"
+  db_name          = "moodle"
+  db_version       = "MYSQL_5_7"
+  db_region        = "us-central1"
+  db_instance_type = "db-n1-standard-1"
+  db_username      = "webmoodle"
+  db_user_host             = module.vm-instance-moodle.web_external_ip
+  # backup settings
+  backup_configuration = {
+    enabled                        = var.backup_enabled
+    binary_log_enabled             = var.binary_log_enabled
+    start_time                     = "00:05"
+    point_in_time_recovery_enabled = var.pit_recovery_enabled
+  }
 }
 
-resource "google_compute_firewall" "allow-http" {
-  name        = "web-firewalls"
-  network     = var.network
-  target_tags = ["web"]
-
-  allow {
-    protocol = "tcp"
-    ports    = ["80", "443"]
-  }
-
-  allow {
-    protocol = "icmp"
-  }
-  depends_on = [google_compute_subnetwork.vpc_subnetwork]
+module "secret-manager" {
+  source            = "./modules/secret-manager"
+  db_url            = module.database.database_url
+  db_username       = module.database.database_user
+  db_password       = module.database.database_password
+  root_db_password  = module.database.root_password
+  moodle-admin-pass = module.database.moodle_password
+}
+module "networking" {
+  source           = "./modules/networking"
+  subnetwork       = "moodle-subnet"
+  ip_cidr_range    = "10.15.0.0/28"
+  region           = "us-central1"
+  network         = "moodle-vpc"
+  zone             = "us-central1-a"
 }
 
-
-resource "google_compute_firewall" "allow-ssh" {
-  name    = "ssh-firewalls"
-  network = var.network
-
-  #target_tags = google_compute_instance.web.tags
-  target_tags = ["web", "db"]
-
-  allow {
-    protocol = "tcp"
-    ports    = ["22"]
-  }
-
-  allow {
-    protocol = "icmp"
-  }
-  depends_on = [google_compute_subnetwork.vpc_subnetwork]
-}
-
-
-resource "google_compute_firewall" "internal_rule" {
-  name    = "internal-rule"
-  network = google_compute_network.vpc_network.id
-  source_ranges  = ["10.15.0.0/28"] 
-
-
-  allow {
-    protocol     = "all"
-  }
-
-  depends_on = [google_compute_subnetwork.vpc_subnetwork]
-}
-
-resource "google_compute_instance" "db" {
-  name         = "db-test"
-  machine_type = var.machine_type
-  zone         = var.zone
-  tags         = ["db"]
-
-  # definition of the boot disk - the initial image 
-  boot_disk {
-    initialize_params {
-      image = var.disk_image
-    }
-  }
-
-  network_interface {
-    network            = var.network
-    subnetwork         = var.subnetwork
-    network_ip         = var.network_ip
-    
-    access_config {
-            nat_ip = var.nat_ip
-    }
-  }
- 
- metadata = {
-    ssh-keys = "vlad:${file(var.public_key_path)}"
-  }
- depends_on = [google_compute_subnetwork.vpc_subnetwork]
-}
-
-
-resource "google_compute_instance" "web" {
-  depends_on = [google_compute_subnetwork.vpc_subnetwork]
-  name         = "web-test"
-  machine_type = var.machine_type
-  zone         = var.zone
-  tags         = ["web"]
-
-  # definition of the boot disk - the initial image 
-  boot_disk {
-    initialize_params {
-      image = var.disk_image
-    }
-  }
-
-  network_interface {
-    network            = var.network
-    subnetwork         = var.subnetwork
-    network_ip         = var.network_ip
-
-    access_config {
-            nat_ip  = var.nat_ip
-    }
-  }
-  
-  metadata = {
-    ssh-keys = "vlad:${file(var.public_key_path)}"
-  }
- 
-}
-
-resource "null_resource" "db_prov" {
-  
-  depends_on = [google_compute_instance.db]
-
-# connection for the work of service providers after installing and configuring the OS
-  connection {
-    host        = "${google_compute_instance.db.network_interface.0.access_config.0.nat_ip}"
-    type        = "ssh"
-    user        = "vlad"
-    agent       = false
-    private_key = "${file(var.private_key_path)}"
-  }
-
-  provisioner "file" {
-    source      = "./files/deployDb.sh"
-    destination = "/tmp/deployDb.sh"   
- } 
-  
-  provisioner "remote-exec" {
-
-    inline = [
-      "sudo chmod +x /tmp/deployDb.sh",
-      "sudo /bin/bash /tmp/deployDb.sh ${google_compute_instance.web.network_interface.0.network_ip} ${var.rootdbpass} ${var.moodleuserdb} ${var.moodlepassword_db}"
-    ]
-  }
+module "vm-instance-moodle" {
+  source                  = "./modules/instance"
+  instance_name           = "moodle"
+  instance_machine_type   = "g1-small"
+  zone                    = "us-central1-a"
+  image_name              = "centos-7-v20190729"
+  network                 = module.networking.network
+  subnetwork              = module.networking.subnet
+  username                = "vlad"
+  public_key_path         = "/Users/vzhovnir/Diplom/Terraform/ssh.pub"
 }
 
 resource "null_resource" "web_prov" {
- 
-  depends_on = [null_resource.db_prov]
-
-# connection for the work of service providers after installing and configuring the OS
+ # connection for the work of service providers after installing and configuring the OS
   connection {
-    host        = "${google_compute_instance.web.network_interface.0.access_config.0.nat_ip}"
+    host        = "${module.vm-instance-moodle.web_external_ip}"
     type        = "ssh"
     user        = "vlad"
     agent       = false
@@ -176,8 +79,7 @@ resource "null_resource" "web_prov" {
   
     inline = [
       "sudo chmod +x /tmp/deployWeb.sh",
-      "sudo /bin/bash /tmp/deployWeb.sh ${google_compute_instance.web.network_interface.0.access_config.0.nat_ip} ${google_compute_instance.db.network_interface.0.network_ip} ${var.rootdbpass} ${var.moodleuserdb} ${var.moodlepassword_db}"
+      "sudo /bin/bash /tmp/deployWeb.sh ${module.vm-instance-moodle.web_external_ip} ${module.database.database_url} ${module.database.root_password} ${var.moodleuserdb} ${module.database.database_password} ${module.database.moodle_password} ${var.mail}"
     ]
   }
 }
-
